@@ -6,10 +6,15 @@ from telegram.ext import (
     CallbackQueryHandler,
     ContextTypes,
 )
+import os
+from dotenv import load_dotenv
 
-TOKEN = "8074739090:AAG4wZmOYdeL3sgwzZOJ6l24ltDvEbHGWpw"
-TWEET_URL = "https://x.com/XodeNet/status/1937438171220038035"
-CHANNEL_ID = "@syzchannell"  
+# Load .env file
+load_dotenv()
+
+TOKEN = os.getenv("TOKEN")
+TWEET_URL = os.getenv("TWEET_URL")
+CHANNEL_ID = os.getenv("CHANNEL_ID") 
 
 # /start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
