@@ -1,3 +1,4 @@
-python-telegram-bot
-tweepy
+python-telegram-bot>=20.0
 python-dotenv
+tweepy
+nest_asyncio
