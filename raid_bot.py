@@ -41,6 +41,7 @@ last_tweet_id = None
 # --- Telegram Handlers ---
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info("Received /start command")
     await update.message.reply_text("Hello! Use /raid to share your tweet.")
 
 
@@ -158,18 +159,19 @@ async def tweet_watcher(app):
             logger.error(f"Unexpected error during tweet watcher: {e}")
             await asyncio.sleep(1 * 60)
 
-        await asyncio.sleep(60)  # Normal polling interval: 1 minutes
+        await asyncio.sleep(60)
 
 
 # --- Startup hook ---
 
 async def on_startup(app):
+    logger.info("🚀 Bot is starting up and tweet watcher is launching.")
     asyncio.create_task(tweet_watcher(app))
 
 
-# --- Main App ---
+# --- Main entrypoint ---
 
-if __name__ == '__main__':
+async def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -179,5 +181,16 @@ if __name__ == '__main__':
 
     app.post_init = on_startup
 
-    logger.info("Bot is running...")
-    app.run_polling()
+    logger.info("✅ Bot is running. Waiting for commands...")
+    await app.run_polling()
+
+import sys
+
+if __name__ == '__main__':
+    if sys.platform.startswith("win"):
+        import nest_asyncio
+        nest_asyncio.apply()
+
+    asyncio.run(main())
+
+
