@@ -19,19 +19,28 @@ from telegram.ext import (
 
 import tweepy
 
-# --- Setup logging ---
-logging.basicConfig(level=logging.INFO)
+# --- Enhanced logging setup ---
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
-# --- Load .env ---
+# --- Load environment variables ---
 load_dotenv()
 
+# Configuration
 TOKEN = os.getenv("TOKEN")
-CHANNEL_ID = os.getenv("CHANNEL_ID")       # e.g. "@channelusername"
+CHANNEL_ID = os.getenv("CHANNEL_ID")  # e.g. "@channelusername"
 GROUP_CHAT_ID = int(os.getenv("GROUP_CHAT_ID", "0"))
 
 TWITTER_BEARER_TOKEN = os.getenv("TWITTER_BEARER_TOKEN")
 TWITTER_USER_ID = os.getenv("TWITTER_USER_ID")
+
+# Performance settings - faster polling for quick consecutive posts
+POLLING_INTERVAL = 10  # Check every 10 seconds for new tweets
+RATE_LIMIT_DELAY = 60  # Wait 1 minute on rate limit (reduced from 120)
+ERROR_DELAY = 30  # Wait 30 seconds on general errors (reduced from 60)
 
 # --- Twitter API client ---
 twitter_client = tweepy.Client(bearer_token=TWITTER_BEARER_TOKEN)
@@ -39,95 +48,200 @@ twitter_client = tweepy.Client(bearer_token=TWITTER_BEARER_TOKEN)
 # Keep track of last tweet seen
 last_tweet_id = None
 
-# --- Telegram Handlers ---
+# --- Enhanced Telegram Handlers ---
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info("Received /start command")
-    await update.message.reply_text("Hello! Use /raid to share your tweet.")
+    """Enhanced start command with better messaging"""
+    logger.info(f"Received /start command from user: {update.effective_user.username}")
+    
+    welcome_msg = """
+🎯 **Welcome to X Raid Bot!**
+
+Ready to amplify your X presence? This bot automatically shares your latest tweets for maximum engagement!
+
+**Commands:**
+• `/raid` - Share your latest tweet
+• `/debugid` - Get chat ID info
+
+🚀 **Auto-raid is active** - New tweets shared instantly!
+    """
+    
+    await update.message.reply_text(welcome_msg, parse_mode='Markdown')
 
 async def raid(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Enhanced raid command with status feedback"""
+    logger.info(f"Manual raid requested by user: {update.effective_user.username}")
+    
+    # Send immediate feedback
+    status_msg = await update.message.reply_text("🔍 Fetching your latest tweet...")
+    
     tweet_url = await get_latest_tweet_url()
     if tweet_url:
         await send_raid_message(context.bot, tweet_url)
+        await status_msg.edit_text("✅ **Raid launched successfully!** 🚀")
+        logger.info(f"✅ Manual raid completed for: {tweet_url}")
     else:
-        await update.message.reply_text("Could not fetch the latest tweet.")
+        await status_msg.edit_text("❌ Could not fetch the latest tweet. Please try again.")
+        logger.warning("❌ Manual raid failed - no tweet found")
 
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Enhanced button click handler with better responses"""
     query = update.callback_query
     await query.answer()
+    
     if query.data == "engaged":
         if query.from_user:
             username = query.from_user.username or query.from_user.first_name
-            await query.message.reply_text(f"🤩 @{username} has dunked it! 💥")
+            
+            # Variety of engagement responses
+            responses = [
+                f"🤩 @{username} has dunked it! 💥",
+                f"🔥 @{username} crushed that engagement! 🎯",
+                f"⚡ @{username} brought the energy! 🚀",
+                f"💫 @{username} made it shine! ✨",
+                f"🏆 @{username} dominated! 🎖️"
+            ]
+            
+            import random
+            response = random.choice(responses)
+            await query.message.reply_text(response)
+            logger.info(f"🎉 User {username} engaged with tweet")
         else:
-            await query.message.reply_text("Someone engaged with the tweet!")
+            await query.message.reply_text("🎉 Someone engaged with the tweet! Keep it going! 🚀")
 
 async def debugid(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Enhanced debug command with more information"""
     chat_id = update.effective_chat.id
-    await update.message.reply_text(
-        f"This chat ID is: `{chat_id}`",
-        parse_mode='Markdown'
-    )
+    chat_type = update.effective_chat.type
+    user_id = update.effective_user.id
+    username = update.effective_user.username
+    
+    debug_info = f"""
+🔧 **Debug Information**
 
-# --- Twitter fetching logic ---
+**Chat ID:** `{chat_id}`
+**Chat Type:** `{chat_type}`
+**User ID:** `{user_id}`
+**Username:** `{username or 'N/A'}`
+**Bot Status:** `Active`
+**Polling:** `Every {POLLING_INTERVAL} seconds`
+    """
+    
+    await update.message.reply_text(debug_info, parse_mode='Markdown')
+    logger.info(f"Debug info requested by {username} in chat {chat_id}")
+
+# --- Enhanced Twitter fetching logic ---
 
 async def get_latest_tweet_url():
+    """Enhanced tweet fetching with better error handling"""
     try:
         response = twitter_client.get_users_tweets(
             id=TWITTER_USER_ID,
             max_results=5,
             tweet_fields=["id", "text", "created_at"],
-            exclude=['replies']
+            exclude=['replies', 'retweets']  # Also exclude retweets
         )
         tweets = response.data or []
+        
         if tweets:
             latest_tweet = tweets[0]
             tweet_id = latest_tweet.id
-            return f"https://twitter.com/i/web/status/{tweet_id}"
+            tweet_url = f"https://twitter.com/i/web/status/{tweet_id}"
+            logger.debug(f"Latest tweet found: {tweet_url}")
+            return tweet_url
         else:
-            logger.info("No tweets found.")
+            logger.info("No tweets found in response.")
             return None
+            
+    except tweepy.TooManyRequests:
+        logger.warning("⚠️ Rate limit hit while fetching tweets")
+        return None
     except Exception as e:
-        logger.error(f"Error fetching tweets: {e}")
+        logger.error(f"❌ Error fetching tweets: {e}")
         return None
 
-# --- Raid message sending logic ---
+# --- Enhanced raid message sending logic ---
 
 async def send_raid_message(bot, tweet_url):
+    """Enhanced raid message with better formatting and error handling"""
+    # Dynamic button text for variety
+    button_texts = [
+        ("🏀 Dunked that tweet!", "💫 Swished! Slam dunk!🔥"),
+        ("🎯 Hit the target!", "⚡ Bullseye! On fire!🔥"),
+        ("🚀 Launched it!", "💥 Boom! Explosive!🔥"),
+        ("🔥 Ignited!", "✨ Lit! Amazing!🔥"),
+        ("💎 Polished!", "🌟 Sparkled! Brilliant!🔥")
+    ]
+    
+    import random
+    engage_text, engaged_text = random.choice(button_texts)
+    
     keyboard = [
-        [InlineKeyboardButton("🏀 Dunked that tweet!", url=tweet_url)],
-        [InlineKeyboardButton("💫 Swished! Slam dunk!🔥", callback_data="engaged")]
+        [InlineKeyboardButton(engage_text, url=tweet_url)],
+        [InlineKeyboardButton(engaged_text, callback_data="engaged")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
+    # Dynamic captions for variety
+    captions = [
+        "💥 Post & Prosper - Time to go viral! 🚀",
+        "🎯 Fresh content alert - Let's make it trend! 🔥",
+        "⚡ New post dropped - Raid time! 💫",
+        "🚀 Launch sequence initiated - Engage! 🎖️",
+        "🔥 Hot content incoming - All hands on deck! 💥"
+    ]
+    
+    caption = random.choice(captions)
+    
     photo_path = os.path.join("bot", "raidBot.png")
     target_chat_ids = [c for c in [CHANNEL_ID, GROUP_CHAT_ID] if c and c != 0]
-
+    
+    success_count = 0
+    total_targets = len(target_chat_ids)
+    
     for chat_id in target_chat_ids:
         try:
-            with open(photo_path, "rb") as photo:
-                await bot.send_photo(
+            if os.path.exists(photo_path):
+                with open(photo_path, "rb") as photo:
+                    await bot.send_photo(
+                        chat_id=chat_id,
+                        photo=photo,
+                        caption=caption,
+                        reply_markup=reply_markup
+                    )
+            else:
+                # Fallback to text message if photo doesn't exist
+                await bot.send_message(
                     chat_id=chat_id,
-                    photo=photo,
-                    caption="💥Post & Prosper - Time to go viral",
+                    text=f"{caption}\n\n{tweet_url}",
                     reply_markup=reply_markup
                 )
-            logger.info(f"✅ Sent raid message to {chat_id}")
+            
+            success_count += 1
+            logger.info(f"✅ Raid message sent to {chat_id}")
+            
         except Exception as e:
             logger.error(f"❌ Error sending to {chat_id}: {e}")
+    
+    logger.info(f"📊 Raid completed: {success_count}/{total_targets} targets reached")
 
-# --- Background polling task ---
+# --- Enhanced background polling task ---
 
 async def tweet_watcher(app):
+    """Enhanced tweet watcher with faster polling and better state management"""
     global last_tweet_id
-
+    
+    logger.info("🔍 Tweet watcher started - monitoring for new posts")
+    consecutive_errors = 0
+    max_consecutive_errors = 5
+    
     while True:
         try:
             response = twitter_client.get_users_tweets(
                 id=TWITTER_USER_ID,
                 max_results=5,
                 tweet_fields=["id", "text", "created_at"],
-                exclude=['replies']
+                exclude=['replies', 'retweets']
             )
             tweets = response.data or []
 
@@ -137,50 +251,104 @@ async def tweet_watcher(app):
                 tweet_url = f"https://twitter.com/i/web/status/{tweet_id}"
 
                 if tweet_id != last_tweet_id:
-                    logger.info(f"New tweet detected: {tweet_url}")
+                    logger.info(f"🆕 New tweet detected: {tweet_url}")
                     last_tweet_id = tweet_id
                     await send_raid_message(app.bot, tweet_url)
+                    logger.info("🎯 Auto-raid completed successfully")
+                    consecutive_errors = 0  # Reset error counter on success
                 else:
-                    logger.info("No new tweet.")
+                    logger.debug("No new tweets found")
             else:
-                logger.info("No tweets returned.")
-
+                logger.debug("No tweets returned from API")
+                
+            consecutive_errors = 0  # Reset on successful API call
+            
         except tweepy.TooManyRequests:
-            logger.warning("Rate limit hit! Waiting 2 minutes before retrying...")
-            await asyncio.sleep(120)
+            logger.warning(f"⚠️ Rate limit hit! Waiting {RATE_LIMIT_DELAY} seconds...")
+            await asyncio.sleep(RATE_LIMIT_DELAY)
+            continue
 
         except Exception as e:
-            logger.error(f"Unexpected error during tweet watcher: {e}")
-            await asyncio.sleep(60)
+            consecutive_errors += 1
+            logger.error(f"❌ Error in tweet watcher (#{consecutive_errors}): {e}")
+            
+            if consecutive_errors >= max_consecutive_errors:
+                logger.critical(f"🚨 Too many consecutive errors ({consecutive_errors}). Extending delay...")
+                await asyncio.sleep(ERROR_DELAY * 3)  # Extended delay
+                consecutive_errors = 0
+            else:
+                await asyncio.sleep(ERROR_DELAY)
+            continue
 
-        await asyncio.sleep(60)
+        # Fast polling for quick consecutive posts
+        await asyncio.sleep(POLLING_INTERVAL)
 
-# --- Startup hook ---
+# --- Enhanced startup hook ---
 
 async def on_startup(app):
-    logger.info("🚀 Bot is starting up and tweet watcher is launching.")
+    """Enhanced startup with validation and better logging"""
+    logger.info("🚀 Bot startup initiated...")
+    
+    # Validate configuration
+    if not TOKEN:
+        logger.error("❌ TOKEN missing in environment variables")
+        sys.exit(1)
+    
+    if not TWITTER_BEARER_TOKEN:
+        logger.error("❌ TWITTER_BEARER_TOKEN missing in environment variables")
+        sys.exit(1)
+        
+    if not TWITTER_USER_ID:
+        logger.error("❌ TWITTER_USER_ID missing in environment variables")
+        sys.exit(1)
+    
+    # Start tweet watcher
     asyncio.create_task(tweet_watcher(app))
+    
+    logger.info("✅ All systems operational!")
+    logger.info(f"📡 Polling interval: {POLLING_INTERVAL} seconds")
+    logger.info(f"🎯 Monitoring user ID: {TWITTER_USER_ID}")
+    logger.info("🚀 Tweet watcher is active - ready for rapid-fire posts!")
 
-# --- Main Application ---
+# --- Enhanced Main Application ---
 
 async def main():
-    app = ApplicationBuilder().token(TOKEN).build()
+    """Enhanced main application with better error handling"""
+    logger.info("🎯 Initializing X Raid Bot...")
+    
+    try:
+        app = ApplicationBuilder().token(TOKEN).build()
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("raid", raid))
-    app.add_handler(CommandHandler("debugid", debugid))
-    app.add_handler(CallbackQueryHandler(button_click))
+        # Add handlers
+        app.add_handler(CommandHandler("start", start))
+        app.add_handler(CommandHandler("raid", raid))
+        app.add_handler(CommandHandler("debugid", debugid))
+        app.add_handler(CallbackQueryHandler(button_click))
 
-    app.post_init = on_startup
+        # Set startup hook
+        app.post_init = on_startup
 
-    logger.info("✅ Bot is running. Waiting for commands...")
-    await app.run_polling()
+        logger.info("✅ Bot initialized successfully!")
+        logger.info("🔄 Starting polling... Press Ctrl+C to stop")
+        
+        # Run with enhanced settings
+        await app.run_polling(
+            drop_pending_updates=True,
+            allowed_updates=Update.ALL_TYPES
+        )
+        
+    except KeyboardInterrupt:
+        logger.info("🛑 Bot stopped by user")
+    except Exception as e:
+        logger.error(f"❌ Fatal error in main application: {e}")
+        sys.exit(1)
 
 # --- Safe async runner ---
 
 if __name__ == "__main__":
+    # Apply nest_asyncio for compatibility
     nest_asyncio.apply()
-
+    
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
