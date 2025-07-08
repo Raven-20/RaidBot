@@ -216,11 +216,15 @@ async def send_raid_message(bot, tweet_url):
 
 async def tweet_watcher(app):
     global last_tweet_id
-    
+
     logger.info("🔍 Tweet watcher started - monitoring for new posts")
+
+    # Keep a set of IDs we've seen
+    known_tweet_ids = set()
+
     consecutive_errors = 0
     max_consecutive_errors = 5
-    
+
     while True:
         try:
             response = twitter_client.get_users_tweets(
@@ -232,27 +236,36 @@ async def tweet_watcher(app):
             tweets = response.data or []
 
             if tweets:
+                new_tweet_detected = False
                 for tweet in tweets:
-                    logger.info(f"Fetched tweet: {tweet.id} | {tweet.created_at} | {tweet.text}")
-                latest_tweet = tweets[0]
-                tweet_id = latest_tweet.id
-                tweet_url = f"https://twitter.com/i/web/status/{tweet_id}"
+                    tweet_id = tweet.id
+                    tweet_url = f"https://twitter.com/i/web/status/{tweet_id}"
 
-                if last_tweet_id is None:
-                    last_tweet_id = tweet_id
-                    logger.info(f"🔧 Initialized watcher with latest tweet: {tweet_url}")
-                elif tweet_id != last_tweet_id:
-                    logger.info(f"🆕 New tweet detected: {tweet_url}")
-                    last_tweet_id = tweet_id
-                    await send_raid_message(app.bot, tweet_url)
-                    logger.info("🎯 Auto-raid completed successfully")
-                else:
-                    logger.debug("No new tweets found.")
+                    if tweet_id not in known_tweet_ids:
+                        # It's a new tweet we haven't announced yet
+                        logger.info(f"🆕 New tweet detected: {tweet_url}")
+                        known_tweet_ids.add(tweet_id)
+
+                        # Only raid if this is not the initial startup
+                        if last_tweet_id is not None:
+                            await send_raid_message(app.bot, tweet_url)
+                            logger.info("🎯 Auto-raid completed successfully")
+
+                        new_tweet_detected = True
+
+                # On first run, initialize last_tweet_id so we don't raid historical tweets
+                if last_tweet_id is None and tweets:
+                    last_tweet_id = tweets[0].id
+                    logger.info(f"🔧 Initialized watcher with latest tweet: https://twitter.com/i/web/status/{last_tweet_id}")
+
+                if not new_tweet_detected:
+                    logger.debug("No new tweets found in latest poll.")
+
             else:
                 logger.debug("No tweets returned from API.")
-                
+
             consecutive_errors = 0
-            
+
         except tweepy.TooManyRequests:
             logger.warning(f"⚠️ Rate limit hit! Waiting {RATE_LIMIT_DELAY} seconds...")
             await asyncio.sleep(RATE_LIMIT_DELAY)
@@ -261,7 +274,7 @@ async def tweet_watcher(app):
         except Exception as e:
             consecutive_errors += 1
             logger.error(f"❌ Error in tweet watcher (#{consecutive_errors}): {e}")
-            
+
             if consecutive_errors >= max_consecutive_errors:
                 logger.critical(f"🚨 Too many consecutive errors ({consecutive_errors}). Extending delay...")
                 await asyncio.sleep(ERROR_DELAY * 3)
