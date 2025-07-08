@@ -283,27 +283,34 @@ async def on_startup(app):
 
 async def main():
     logger.info("🎯 Initializing X Raid Bot...")
-    
+
     try:
         app = ApplicationBuilder().token(TOKEN).build()
 
+        # Add handlers
         app.add_handler(CommandHandler("start", start))
         app.add_handler(CommandHandler("raid", raid))
         app.add_handler(CommandHandler("debugid", debugid))
         app.add_handler(CallbackQueryHandler(button_click))
 
+        # Set startup hook
         app.post_init = on_startup
 
         logger.info("✅ Bot initialized successfully!")
-        logger.info("🔄 Starting polling... Press Ctrl+C to stop")
-        
-        await app.run_polling(
-            drop_pending_updates=True,
-            allowed_updates=Update.ALL_TYPES
-        )
-        
+
+        # Explicit manual startup sequence:
+        await app.initialize()
+        await app.start()
+        await app.updater.start_polling()
+
+        logger.info("🔄 Polling started... Press Ctrl+C to stop")
+
+        # keep running forever
+        await asyncio.Event().wait()
+
     except KeyboardInterrupt:
         logger.info("🛑 Bot stopped by user")
+
     except Exception as e:
         logger.error(f"❌ Fatal error in main application: {e}")
         sys.exit(1)
