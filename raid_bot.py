@@ -53,6 +53,7 @@ twitter_client = tweepy.Client(bearer_token=TWITTER_BEARER_TOKEN)
 last_tweet_id = None
 
 # --- Handlers ---
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Received /start command from user: {update.effective_user.username}")
     
@@ -132,7 +133,7 @@ async def get_latest_tweet_url():
             id=TWITTER_USER_ID,
             max_results=5,
             tweet_fields=["id", "text", "created_at"],
-            exclude=['replies', 'retweets']
+            exclude=['replies']
         )
         tweets = response.data or []
         
@@ -224,7 +225,7 @@ async def tweet_watcher(app):
                 id=TWITTER_USER_ID,
                 max_results=5,
                 tweet_fields=["id", "text", "created_at"],
-                exclude=['replies', 'retweets']
+                exclude=['replies']
             )
             tweets = response.data or []
 
@@ -288,33 +289,37 @@ async def on_startup(app):
     logger.info("🚀 Tweet watcher is active - ready for rapid-fire posts!")
 
 # --- NEW HANDLER: user_tweet_raid ---
+
 async def user_tweet_raid(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Raid any tweet sent as a message."""
-    message = update.effective_message.text
+    """Handle any message that might be a tweet link."""
+    message_text = update.effective_message.text
     user = update.effective_user
+    chat_id = update.effective_chat.id
 
     tweet_url_match = re.search(
-        r"(https?://)?(www\.)?twitter\.com/.+/status/\d+",
-        message
+        r"(https?://)?(www\.)?(twitter\.com|x\.com)/\S+/status/\d+",
+        message_text
     )
-    
+
     if tweet_url_match:
         tweet_url = tweet_url_match.group(0)
-        logger.info(f"User {user.username} requested raid for: {tweet_url}")
+        logger.info(f"📨 User @{user.username} submitted link for raid: {tweet_url}")
 
         await update.message.reply_text(
-            f"🚀 Launching raid for:\n{tweet_url}"
+            f"🚀 Launching raid for tweet:\n{tweet_url}"
         )
-        
+
         await send_raid_message(context.bot, tweet_url)
 
-        await update.message.reply_text("✅ Raid launched successfully!")
+        logger.info(f"✅ Raid triggered via message by @{user.username}")
     else:
+        logger.debug(f"⚠️ Message in chat {chat_id} did not match a tweet URL.")
         await update.message.reply_text(
-            "❌ Could not detect a valid tweet link."
+            "❌ I couldn’t detect a valid tweet link. Please send a full tweet URL from Twitter or X."
         )
 
 # --- Main ---
+
 async def main():
     logger.info("🎯 Initializing X Raid Bot...")
 
@@ -327,13 +332,12 @@ async def main():
         app.add_handler(CommandHandler("debugid", debugid))
         app.add_handler(CallbackQueryHandler(button_click))
 
-        # New handler for tweet URLs
+        # NEW: Handle messages containing tweet URLs
         app.add_handler(MessageHandler(
-            filters.Regex(r"(https?://)?(www\.)?twitter\.com/.+/status/\d+"),
+            filters.TEXT & ~filters.COMMAND,
             user_tweet_raid
         ))
 
-        # Set startup hook
         app.post_init = on_startup
 
         logger.info("✅ Bot initialized successfully!")
@@ -352,3 +356,4 @@ async def main():
     except Exception as e:
         logger.error(f"❌ Fatal error in main application: {e}")
         sys.exit(1)
+
