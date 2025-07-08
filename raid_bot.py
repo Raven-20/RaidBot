@@ -2,6 +2,8 @@ import asyncio
 import os
 import sys
 import logging
+import re
+
 from dotenv import load_dotenv
 
 from telegram import (
@@ -13,6 +15,8 @@ from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     CallbackQueryHandler,
+    MessageHandler,
+    filters,
     ContextTypes,
 )
 
@@ -60,6 +64,8 @@ Ready to amplify your X presence? This bot automatically shares your latest twee
 **Commands:**
 • `/raid` - Share your latest tweet
 • `/debugid` - Get chat ID info
+
+Or simply send me a tweet link to raid any tweet!
 
 🚀 **Auto-raid is active** - New tweets shared instantly!
     """
@@ -281,6 +287,34 @@ async def on_startup(app):
     logger.info(f"🎯 Monitoring user ID: {TWITTER_USER_ID}")
     logger.info("🚀 Tweet watcher is active - ready for rapid-fire posts!")
 
+# --- NEW HANDLER: user_tweet_raid ---
+async def user_tweet_raid(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Raid any tweet sent as a message."""
+    message = update.effective_message.text
+    user = update.effective_user
+
+    tweet_url_match = re.search(
+        r"(https?://)?(www\.)?twitter\.com/.+/status/\d+",
+        message
+    )
+    
+    if tweet_url_match:
+        tweet_url = tweet_url_match.group(0)
+        logger.info(f"User {user.username} requested raid for: {tweet_url}")
+
+        await update.message.reply_text(
+            f"🚀 Launching raid for:\n{tweet_url}"
+        )
+        
+        await send_raid_message(context.bot, tweet_url)
+
+        await update.message.reply_text("✅ Raid launched successfully!")
+    else:
+        await update.message.reply_text(
+            "❌ Could not detect a valid tweet link."
+        )
+
+# --- Main ---
 async def main():
     logger.info("🎯 Initializing X Raid Bot...")
 
@@ -293,19 +327,23 @@ async def main():
         app.add_handler(CommandHandler("debugid", debugid))
         app.add_handler(CallbackQueryHandler(button_click))
 
+        # New handler for tweet URLs
+        app.add_handler(MessageHandler(
+            filters.Regex(r"(https?://)?(www\.)?twitter\.com/.+/status/\d+"),
+            user_tweet_raid
+        ))
+
         # Set startup hook
         app.post_init = on_startup
 
         logger.info("✅ Bot initialized successfully!")
 
-        # Explicit manual startup sequence:
         await app.initialize()
         await app.start()
         await app.updater.start_polling()
 
         logger.info("🔄 Polling started... Press Ctrl+C to stop")
 
-        # keep running forever
         await asyncio.Event().wait()
 
     except KeyboardInterrupt:
