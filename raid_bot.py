@@ -42,7 +42,7 @@ TWITTER_BEARER_TOKEN = os.getenv("TWITTER_BEARER_TOKEN")
 TWITTER_USER_ID = os.getenv("TWITTER_USER_ID")
 
 # Performance settings
-POLLING_INTERVAL = 10
+POLLING_INTERVAL = 30           # Safer interval for rate limits
 RATE_LIMIT_DELAY = 60
 ERROR_DELAY = 30
 
@@ -81,7 +81,7 @@ async def raid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tweet_url = await get_latest_tweet_url()
     if tweet_url:
         await send_raid_message(context.bot, tweet_url)
-        await status_msg.edit_text("✅ **Raid launched successfully!** 🚀")
+        await status_msg.edit_text("✅ **Raid launched successfully!** 🚀", parse_mode='Markdown')
         logger.info(f"✅ Manual raid completed for: {tweet_url}")
     else:
         await status_msg.edit_text("❌ Could not fetch the latest tweet. Please try again.")
@@ -138,13 +138,15 @@ async def get_latest_tweet_url():
         tweets = response.data or []
         
         if tweets:
+            for tweet in tweets:
+                logger.info(f"Fetched tweet: {tweet.id} | {tweet.created_at} | {tweet.text}")
             latest_tweet = tweets[0]
             tweet_id = latest_tweet.id
             tweet_url = f"https://twitter.com/i/web/status/{tweet_id}"
             logger.debug(f"Latest tweet found: {tweet_url}")
             return tweet_url
         else:
-            logger.info("No tweets found in response.")
+            logger.info("No tweets found in API response.")
             return None
             
     except tweepy.TooManyRequests:
@@ -230,20 +232,24 @@ async def tweet_watcher(app):
             tweets = response.data or []
 
             if tweets:
+                for tweet in tweets:
+                    logger.info(f"Fetched tweet: {tweet.id} | {tweet.created_at} | {tweet.text}")
                 latest_tweet = tweets[0]
                 tweet_id = latest_tweet.id
                 tweet_url = f"https://twitter.com/i/web/status/{tweet_id}"
 
-                if tweet_id != last_tweet_id:
+                if last_tweet_id is None:
+                    last_tweet_id = tweet_id
+                    logger.info(f"🔧 Initialized watcher with latest tweet: {tweet_url}")
+                elif tweet_id != last_tweet_id:
                     logger.info(f"🆕 New tweet detected: {tweet_url}")
                     last_tweet_id = tweet_id
                     await send_raid_message(app.bot, tweet_url)
                     logger.info("🎯 Auto-raid completed successfully")
-                    consecutive_errors = 0
                 else:
-                    logger.debug("No new tweets found")
+                    logger.debug("No new tweets found.")
             else:
-                logger.debug("No tweets returned from API")
+                logger.debug("No tweets returned from API.")
                 
             consecutive_errors = 0
             
@@ -268,6 +274,13 @@ async def tweet_watcher(app):
 
 async def on_startup(app):
     logger.info("🚀 Bot startup initiated...")
+
+    # Print environment variables for debugging
+    logger.info(f"TOKEN: {'SET' if TOKEN else 'MISSING'}")
+    logger.info(f"TWITTER_BEARER_TOKEN: {'SET' if TWITTER_BEARER_TOKEN else 'MISSING'}")
+    logger.info(f"TWITTER_USER_ID: {TWITTER_USER_ID}")
+    logger.info(f"CHANNEL_ID: {CHANNEL_ID}")
+    logger.info(f"GROUP_CHAT_ID: {GROUP_CHAT_ID}")
     
     if not TOKEN:
         logger.error("❌ TOKEN missing in environment variables")
