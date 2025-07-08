@@ -214,6 +214,7 @@ async def send_raid_message(bot, tweet_url):
     
     logger.info(f"📊 Raid completed: {success_count}/{total_targets} targets reached")
 
+
 async def tweet_watcher(app):
     global last_tweet_id
 
@@ -221,25 +222,32 @@ async def tweet_watcher(app):
 
     # Keep a set of IDs we've seen
     known_tweet_ids = set()
-
     consecutive_errors = 0
     max_consecutive_errors = 5
 
     while True:
         try:
+            # Fetch the user's recent tweets
             response = twitter_client.get_users_tweets(
                 id=TWITTER_USER_ID,
                 max_results=5,
-                tweet_fields=["id", "text", "created_at"],
-                exclude=['replies']
+                tweet_fields=["id", "text", "created_at"]
+                # exclude=['replies']     # ← comment this out during testing
             )
             tweets = response.data or []
 
+            logger.info(f"Received {len(tweets)} tweets from Twitter API.")
+
             if tweets:
+                logger.info(f"Known tweet IDs so far: {known_tweet_ids}")
+
                 new_tweet_detected = False
+
                 for tweet in tweets:
                     tweet_id = tweet.id
                     tweet_url = f"https://twitter.com/i/web/status/{tweet_id}"
+
+                    logger.info(f"Examining tweet ID {tweet_id}: {tweet.text}")
 
                     if tweet_id not in known_tweet_ids:
                         # It's a new tweet we haven't announced yet
@@ -284,6 +292,7 @@ async def tweet_watcher(app):
             continue
 
         await asyncio.sleep(POLLING_INTERVAL)
+
 
 async def on_startup(app):
     logger.info("🚀 Bot startup initiated...")
@@ -345,36 +354,25 @@ async def user_tweet_raid(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 # --- Main ---
-
-async def main():
+def main():
     logger.info("🎯 Initializing X Raid Bot...")
 
     try:
-        app = ApplicationBuilder().token(TOKEN).build()
+        app = ApplicationBuilder().token(TOKEN).post_init(on_startup).build()
 
-        # Add handlers
+        # Handlers
         app.add_handler(CommandHandler("start", start))
         app.add_handler(CommandHandler("raid", raid))
         app.add_handler(CommandHandler("debugid", debugid))
         app.add_handler(CallbackQueryHandler(button_click))
-
-        # NEW: Handle messages containing tweet URLs
         app.add_handler(MessageHandler(
             filters.TEXT & ~filters.COMMAND,
             user_tweet_raid
         ))
 
-        app.post_init = on_startup
-
         logger.info("✅ Bot initialized successfully!")
 
-        await app.initialize()
-        await app.start()
-        await app.updater.start_polling()
-
-        logger.info("🔄 Polling started... Press Ctrl+C to stop")
-
-        await asyncio.Event().wait()
+        app.run_polling()
 
     except KeyboardInterrupt:
         logger.info("🛑 Bot stopped by user")
